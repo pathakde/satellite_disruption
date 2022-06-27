@@ -1,5 +1,34 @@
 import re
 
+def ID_to_sim_halo_snap(ID=0):
+    '''
+    input params: 
+        ID: new halo ID of the format SSSXXXXYYYY [3# sim] 
+                                                 +[4# latest snap num when halo exists] 
+                                                 +[1-4# sim halo ID at latest snap]
+    output params: 
+       simulation: corresponding simulation in format 'h329'
+       status: status of halo in format 'Host', 'Survivor' or 'Zombie'
+       halo_id: id of halo in format '1', '283', etc.
+       snap_num: final snapshot number in format '0071', '4096', etc.
+    '''
+    simulation = 'h'+str(ID)[:3] #eg. h329        
+    snap_num = str(str(ID)[3:7])
+    halo_id = str(ID)[7:]
+    
+    #Status:
+    if snap_num == '4096':
+        if halo_id == '1':
+            status='Host'
+        else:
+            status='Survivor'
+    else:
+        status='Zombie'
+        
+    return simulation, status, halo_id, snap_num
+
+
+
 def get_file_path(ID=0, tangos_halo=0, simulation=0, status=0, halo_id=0, snap_num=0, resolution=1000):
     '''
     input params: 
@@ -14,8 +43,9 @@ def get_file_path(ID=0, tangos_halo=0, simulation=0, status=0, halo_id=0, snap_n
     import sys
 
     if ID:
+        simulation, status, halo_id, snap_num = ID_to_sim_halo_snap(ID=ID)
         ID=str(ID)
-        simulation = ID[:3]
+#         simulation = ID[:3]
         snapnum = 'snap_' + ID[3:7]
         halo_num = 'halo_' + ID[7:]
     elif tangos_halo:
@@ -31,6 +61,8 @@ def get_file_path(ID=0, tangos_halo=0, simulation=0, status=0, halo_id=0, snap_n
         return f'Halo_Files/'+ str(simulation) +'/'+ str(status) +'/'+ str(snapnum) +'_'+ str(halo_num) +'.hdf5'
     elif resolution==100:
         return f'Halo_Files/'+ str(simulation) +'_100/'+ str(status) +'/'+ str(snapnum) +'_'+ str(halo_num) +'.hdf5'
+    elif resolution=='Mint':
+        return f'Mint_Data/Halo_Files/'+ str(simulation) +'/'+ str(status) +'/'+ str(snapnum) +'_'+ str(halo_num) +'.hdf5'
     else:
         raise ValueError("Resolution not implemented yet.")    
     

@@ -17,14 +17,14 @@ def ID_to_sim_halo_snap(ID=0):
                                                  +[4# latest snap num when halo exists] 
                                                  +[1-4# sim halo ID at latest snap]
     output params: 
-       simulation: corresponding simulation in format 'h329'
-       status: status of halo in format 'Host', 'Survivor' or 'Zombie'
-       halo_id: id of halo in format '1', '283', etc.
-       snap_num: final snapshot number in format '0071', '4096', etc.
+       simulation: corresponding simulation as string: 'h148', 'h229', 'h242', 'h329'
+       status: status of halo as string [as used in .path.get_file_path]: 'Host', 'Survivor', 'Zombie'
+       halo_id: corresponding amiga assigned id of halo as string '1', '283', etc.
+       snap_num: corresponding snapshot number in format '0071', '4096', etc.
     '''
     simulation = 'h'+str(ID)[:3] #eg. h329        
-    snap_num = str(str(ID)[3:7])
-    halo_id = str(ID)[7:]
+    snap_num = str(str(ID)[3:7]) #eg. 4096
+    halo_id = str(ID)[7:] #eg. 10
     
     #Status:
     if snap_num == '4096':
@@ -85,6 +85,14 @@ def track_halo_property(simulation, key, tangos_halo=0, halo_path=0, halo_id=0, 
         tracked parameter: earliest --> latest snapshot: numpy array
     '''
     
+    # edit .db path to match local address
+    if resolution==1000:
+        tangos.init_db("simulation_database/"+ str(simulation) +".db")
+    elif resolution==100:
+        tangos.init_db("/data/Sims/Databases/100Nptcls/"+ str(simulation) +".db")
+    else:
+        raise ValueError("Resolution not implemented yet.")
+        
     if tangos_halo:
         halo = tangos_halo
     elif halo_id and snap_num and simulation:
@@ -99,14 +107,6 @@ def track_halo_property(simulation, key, tangos_halo=0, halo_path=0, halo_id=0, 
         halo = tangos.get_halo(str(halo))
     else:
         raise ValueError("Halo not found. You got this tho.")
-
-        #edit .db path to match local address
-    if resolution==1000:
-        tangos.init_db("simulation_database/"+ str(simulation) +".db")
-    elif resolution==100:
-        tangos.init_db("/data/Sims/Databases/100Nptcls/"+ str(simulation) +".db")
-    else:
-        raise ValueError("Resolution not implemented yet.")
         
     # round all times in Gyr to 2 decimal places due to 
     # inconsistent float truncation between response to livecalculation query and direct database query
@@ -174,7 +174,7 @@ def first_encounter_time(ID=0, simulation=0, status=0, tangos_halo=0, halo_id=0,
 
 
 
-def max_mass_time(ID=0, simulation=0, status=0, tangos_halo=0, halo_id=0, snap_num=0, category='stars', resolution=1000):
+def max_mass_time(ID=0, simulation=0, status=0, tangos_halo=0, halo_id=0, snap_num=0, category='stars', resolution=100):
     '''
     input params: 
         simulation: h148, h229, h242, h329: string
@@ -182,7 +182,7 @@ def max_mass_time(ID=0, simulation=0, status=0, tangos_halo=0, halo_id=0, snap_n
         tangos_halo: 0 or a valid Tangos halo object
         halo_id: halo id: 0 or string or numeric
         snap_num: 0 or 4 digit simulation snapshot number: string
-        category: 'stars' or 'dm': string
+        category: 'stars' or 'dm' or 'total': string
     output params:
         maximum stellar mass: the maximum stellar mass of a dwarf before disruption
             [units: Msol]
@@ -197,24 +197,36 @@ def max_mass_time(ID=0, simulation=0, status=0, tangos_halo=0, halo_id=0, snap_n
         t_Gyr = fh['time_|_Gyr'][:]
         hostMstar = fh['M_star_|_Msol'][:]
         hostMvir = fh['Mvir_|_Msol'][:]
+        hostMgas = fh['M_gas_|_Msol'][:]
     #Satellite
     path = get_file_path(tangos_halo=tangos_halo, simulation=simulation, status=status, halo_id=halo_id, snap_num=snap_num, resolution=resolution)
     with h5py.File(path, 'r') as f:
         satMstar = f['M_star_|_Msol'][:]
         satMvir = f['Mvir_|_Msol'][:]
+        satMgas = f['M_gas_|_Msol'][:]
+    total_mass=satMstar+satMvir+satMgas    
+    
     if category=='stars':
         max_satM = max(satMstar[satMstar != hostMstar])
         max_satM_time = min(t_Gyr[satMstar==max_satM])
     elif category=='dm':
         max_satM = max(satMvir[satMvir != hostMvir])
         max_satM_time = min(t_Gyr[satMvir==max_satM])
+    elif category=='total':
+        max_satM = max(total_mass[satMstar != hostMstar])
+        max_satM_time = min(t_Gyr[total_mass==max_satM])
+    elif category=='ratio':
+        ratio = satMstar/total_mass
+        ratio[total_mass==0]=0
+        max_satM = max(ratio[satMstar != hostMstar])
+        max_satM_time = min(t_Gyr[ratio==max_satM])
     else:
         raise ValueError('A very specific bad thing happened. Try category= "stars" or "dm".') 
     
     return max_satM, max_satM_time
 
 
-
+"""
 def accretion_time(ID=0, simulation=0, status=0, tangos_halo=0, halo_id=0, snap_num=0, category='stars', resolution=1000):
     '''
     input params: 
@@ -313,12 +325,10 @@ def accretion_time(ID=0, simulation=0, status=0, tangos_halo=0, halo_id=0, snap_
             raise ValueError('A very specific bad thing happened. Try category= "stars" or "dm".')
            #0           #1           #2                    #3
     return t_accretion, M_accretion[0], Msat_ratio_accretion[0], int(id_accretion[0]), Mhost_ratio_accretion[0]
+"""
 
-
-'''
-
-def accretion_time(ID=0, simulation=0, status=0, tangos_halo=0, halo_id=0, snap_num=0, category='stars'):
-    """
+def accretion_time(ID=0, simulation=0, status=0, tangos_halo=0, halo_id=0, snap_num=0, category='stars', resolution=1000):
+    '''
     input params: 
         simulation: h148, h229, h242, h329: string
         status: 'Zombie', 'Survivor': string
@@ -327,6 +337,8 @@ def accretion_time(ID=0, simulation=0, status=0, tangos_halo=0, halo_id=0, snap_
         snap_num: 0 or 4 digit simulation snapshot number: string
         category: 'stars' or 'dm': string
     output params:
+    Accretion: First time that the satellite crosses (try) 1x (else 1.5x) the virial radius of the host
+               The satellite must have some stars at infall.
         mass at accretion: mass of dwarf at accretion
         0: [units: Msol]
         time of accretion: the latest time when a dwarf crosses from outside to inside 1.5 x the virial radius of the host
@@ -335,13 +347,20 @@ def accretion_time(ID=0, simulation=0, status=0, tangos_halo=0, halo_id=0, snap_
         2: [units: None]
         mass ratio of host at accretion: mass of host at accretion / mass of host at z=0
         3: [units: None]
-    """
+    '''
+    import pandas as pd
     if ID != 0:
         simulation, status, halo_id, snap_num = ID_to_sim_halo_snap(ID=ID)
-    # Set Accretion threshold at d*hostRvir
+        halo_id=int(float(halo_id))
+#    d = pd.read_csv('sSFR_data100.csv')
+#    ids = d['ID'].to_numpy()
+#    IDs = d['IDs'].to_numpy()
+#    unique_ids = IDs[ids==ID][0] # A string of form [a b c ...]
+#    unique_ids = np.array(list(map(float, unique_ids[1:-1].split())))
+    # Accretion threshold at d*hostRvir
     d=1
     #Host
-    path = get_file_path(tangos_halo=0, simulation=simulation, status='Host', halo_id='1', snap_num='4096')
+    path = get_file_path(tangos_halo=0, simulation=simulation, status='Host', halo_id='1', snap_num='4096', resolution=resolution)
     with h5py.File(path, 'r') as fh:
         a = fh['time_|_a'][:]
         t_Gyr = fh['time_|_Gyr'][:]
@@ -351,13 +370,14 @@ def accretion_time(ID=0, simulation=0, status=0, tangos_halo=0, halo_id=0, snap_
         hostMvir = fh['Mvir_|_Msol'][:]
         hostRvir = fh['Rvir_|_kpc'][:]
         hostMstar = fh['M_star_|_Msol'][:]
-
+    t_Gyr = np.array([round(t, 3) for t in t_Gyr])
     #Satellite
-    path = get_file_path(tangos_halo=tangos_halo, simulation=simulation, status=status, halo_id=halo_id, snap_num=snap_num)
+    path = get_file_path(tangos_halo=tangos_halo, simulation=simulation, status=status, halo_id=halo_id, snap_num=snap_num, resolution=resolution)
     with h5py.File(path, 'r') as f:
         satx = f['Xc_|_kpc'][:]
         saty = f['Yc_|_kpc'][:]
         satz = f['Zc_|_kpc'][:]
+        satnstar = f['n_star'][:]
         satMvir = f['Mvir_|_Msol'][:]
         satMstar = f['M_star_|_Msol'][:]
         
@@ -365,39 +385,48 @@ def accretion_time(ID=0, simulation=0, status=0, tangos_halo=0, halo_id=0, snap_
     distance_hostRvir = distance/hostRvir
     
     dips = np.zeros(len(distance))
-    t_disruption = disruption_time(simulation=simulation, status=status, 
-                                   tangos_halo=tangos_halo, halo_id=halo_id, snap_num=snap_num)
+    t_disruption = disruption_time(ID=ID, simulation=simulation, status=status, 
+                                   tangos_halo=tangos_halo, halo_id=halo_id, snap_num=snap_num, resolution=resolution)
     if t_disruption == 0: #this is a weird zombie, which I want to exclude
         t_accretion = -1
-        M_accretion = -1
-        Msat_ratio_accretion = -1
-        Mhost_ratio_accretion = -1    
+        M_accretion = [-1]
+        Msat_ratio_accretion = [-1]
+        Mhost_ratio_accretion = [-1]   
     else:
         for i, val in enumerate(distance):
             if i > 0 and distance[i]<=d*hostRvir[i] and distance[i-1]>d*hostRvir[i-1] and hostMvir[i]!=satMvir[i] and satMstar[i]>0:
                 dips[i]=1
+            elif i > 0 and distance[i]<=1.5*d*hostRvir[i] and distance[i-1]>1.5*d*hostRvir[i-1] and hostMvir[i]!=satMvir[i] and satMstar[i]>0:
+                dips[i]=2
         if 1 in dips:
-            # First dip in position
             t_accretion = min(t_Gyr[dips==1]) #Gyr since beginning of simulation
         else:
             if t_disruption == -1:
                 t_accretion = min(t_Gyr[(distance_hostRvir<=d+0.1) & (hostMstar>0) & (satMstar>0) & (hostMstar!=satMstar)])
             else:
-                t_accretion = disruption_time(simulation=simulation, status=status, 
-                                              tangos_halo=tangos_halo, halo_id=halo_id, snap_num=snap_num)     
+                if 2 in dips:
+                    t_accretion = min(t_Gyr[dips==2]) #Gyr since beginning of simulation
+                else:
+                    t_accretion = disruption_time(ID=ID, simulation=simulation, status=status, 
+                                                  tangos_halo=tangos_halo, halo_id=halo_id, snap_num=snap_num, resolution=resolution)     
+        t_accretion = round(t_accretion, 3)
+        #id_accretion = np.array(unique_ids)[t_Gyr==t_accretion]
         if category=='stars':
             M_accretion = satMstar[t_Gyr==t_accretion]
             Msat_ratio_accretion = M_accretion/hostMstar[t_Gyr==t_accretion]
             Mhost_ratio_accretion = hostMstar[t_Gyr==t_accretion]/hostMstar[-1]
+            # nstar_accretion = satnstar[t_Gyr==t_accretion]
+            
         elif category=='dm':
             M_accretion = satMvir[t_Gyr==t_accretion]
             Msat_ratio_accretion = M_accretion/hostMvir[t_Gyr==t_accretion]
             Mhost_ratio_accretion = hostMvir[t_Gyr==t_accretion]/hostMvir[-1]
         else:
             raise ValueError('A very specific bad thing happened. Try category= "stars" or "dm".')
-           #0              #1           #2                       #3
-    return M_accretion[0], t_accretion, Msat_ratio_accretion[0], Mhost_ratio_accretion
-'''
+           #0           #1           #2                    #3
+    return t_accretion, M_accretion[0], Msat_ratio_accretion[0]#, int(id_accretion[0]), Mhost_ratio_accretion[0]
+
+
 
 def max_sSFR_time(ID=0, simulation=0, status=0, tangos_halo=0, halo_id=0, snap_num=0, resolution=1000):
     '''
@@ -1233,3 +1262,57 @@ def get_main_progenitor_branch(tangos_halo, simulation, resolution=1000):
             unique_ids.append(idk)
         x += 1
     return MPB, unique_ids
+
+
+def near_mint_disruption_time(ID=0, num_ptcls=800, simulation=0, status=0, tangos_halo=0, halo_id=0, snap_num=0, resolution='Mint'):
+    '''
+    input params: 
+        simulation: h148, h229, h242, h329: string
+        status: 'Zombie', 'Survivor': string
+        tangos_halo: 0 or a valid Tangos halo object
+        halo_id: halo id: 0 or string or numeric
+        snap_num: 0 or 4 digit simulation snapshot number: string
+        category: 'stars' or 'dm': string
+    output params:
+        time of disruption: 
+                [units: Gyr since start of simulation]
+    '''
+    if ID != 0:
+        simulation, status, halo_id, snap_num = ID_to_sim_halo_snap(ID=ID)
+    #Host
+    path = get_file_path(tangos_halo=0, simulation=simulation, status='Host', halo_id='1', snap_num='4096', resolution=resolution)
+    with h5py.File(path, 'r') as fh:
+        t_Gyr = fh['time_|_Gyr'][:]
+        hostMvir = fh['Mvir_|_Msol'][:]
+        
+    #Satellite
+    path = get_file_path(tangos_halo=tangos_halo, simulation=simulation, status=status, halo_id=halo_id, snap_num=snap_num, resolution=resolution)
+    with h5py.File(path, 'r') as f:
+        satMvir = f['Mvir_|_Msol'][:]
+        satn_dm = f['n_dm'][:]
+        satn_star = f['n_star'][:]
+        satn_gas = f['n_gas'][:]
+        
+    n_ptcls = satn_dm + satn_star + satn_gas
+    satn_ptcls = n_ptcls[(hostMvir!=satMvir) & (satMvir>0)]
+#     print(satn_ptcls)
+    t_Gyr = t_Gyr[(hostMvir!=satMvir) & (satMvir>0)]
+    surviving_times = t_Gyr[satn_ptcls >= num_ptcls]
+#     print(surviving_times)
+    
+    t_infall = accretion_time(ID=ID, simulation=simulation, status=status, tangos_halo=tangos_halo, 
+                              halo_id=halo_id, snap_num=snap_num, category='stars', resolution=resolution)[0]
+    
+    if len(surviving_times)<2:
+        t_disruption = 0 #Never exceeded near-mint mass resolution for more than 2 ts
+        new_status = 'Unborn'
+    elif surviving_times[-1]>=13.8:
+        t_disruption = -1
+        new_status = 'Survivor'
+    elif len(surviving_times[surviving_times>=t_infall-0.5])<1:
+        t_disruption = max(surviving_times)
+        new_status = 'Blimp'
+    else:
+        t_disruption = max(surviving_times)
+        new_status = 'Zombie'
+    return t_disruption, new_status
